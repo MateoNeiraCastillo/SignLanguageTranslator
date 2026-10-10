@@ -3,5 +3,4 @@ mediapipe==0.10.9
 numpy
 scikit-learn
 joblib
-pygame
-edge-tts
+pyttsx3; sys_platform != "darwin"

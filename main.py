@@ -3,20 +3,15 @@ import mediapipe as mp
 import joblib
 import numpy as np
 import time
-import os
+import sys
+import subprocess
 import threading
 import queue
-import asyncio
-import tempfile
-import pygame
-import edge_tts
 
 
 # =========================
 # AUDIO
 # =========================
-
-pygame.mixer.init()
 
 speech_queue = queue.Queue()  # used to store words that need to be spoken
 audio_lock = threading.Lock()  # prevents overlapping audio playback
@@ -24,8 +19,6 @@ audio_lock = threading.Lock()  # prevents overlapping audio playback
 last_spoken_word = ""
 last_audio_time = 0
 audio_cooldown = 0.1  # avoids speaking too frequently
-
-VOICE = "en-US-JennyNeural"
 
 
 def audio_worker():
@@ -44,7 +37,7 @@ def audio_worker():
             break  # used to safely stop the thread
 
         try:
-            speak_with_edge_tts(text)
+            speak_offline(text)
             last_audio_time = time.time()
         except Exception as e:
             print("Audio error:", e)
@@ -52,10 +45,11 @@ def audio_worker():
         speech_queue.task_done()
 
 
-def speak_with_edge_tts(text):
+def speak_offline(text):
     """
-    Generates an audio file from the given text using edge_tts and plays it using pygame. A temporary file is created
-    and deleted after playback
+    Speaks the given text using the operating system's offline voice. On macOS it uses the built-in "say" command,
+    on Windows and Linux it uses pyttsx3. No internet connection is needed. The call blocks until the audio
+    finishes, which is why it runs in the audio worker thread
     :param
     text: str
     Word or phrase that will be converted into speech
@@ -63,26 +57,14 @@ def speak_with_edge_tts(text):
     None
     """
     with audio_lock:  # ensures only one audio plays at a time
-        fd, temp_path = tempfile.mkstemp(suffix=".mp3")
-        os.close(fd)
-
-        async def generate():
-            communicate = edge_tts.Communicate(text=text, voice=VOICE)
-            await communicate.save(temp_path)
-
-        asyncio.run(generate())
-
-        pygame.mixer.music.load(temp_path)
-        pygame.mixer.music.play()
-
-        # wait until audio finishes (this would freeze program if not in a thread)
-        while pygame.mixer.music.get_busy():
-            time.sleep(0.03)
-
-        pygame.mixer.music.unload()
-
-        if os.path.exists(temp_path):
-            os.remove(temp_path)  # clean temp file
+        if sys.platform == "darwin":
+            subprocess.run(["say", text], check=False)
+        else:
+            import pyttsx3
+            engine = pyttsx3.init()
+            engine.say(text)
+            engine.runAndWait()
+            engine.stop()
 
 
 def speak(text):
@@ -273,7 +255,6 @@ def run_translator():
     cap.release()
     cv2.destroyAllWindows()
     hands.close()
-    pygame.quit()
 
 
 if __name__ == "__main__":
