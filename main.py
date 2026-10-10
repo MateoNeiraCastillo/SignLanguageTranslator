@@ -10,7 +10,6 @@ import asyncio
 import tempfile
 import pygame
 import edge_tts
-import customtkinter as ctk
 
 
 # =========================
@@ -168,82 +167,6 @@ last_hand_seen_time = time.time()
 is_translating = True
 WINDOW_NAME = "Sign Translator"
 
-# =========================
-# START SCREEN
-# =========================
-
-def start_screen():
-    """
-    Displays the initial UI where the user can start the camera or close the application
-    :return:
-    bool
-    True if the user wants to start the camera, False if the user closes the application
-    """
-    ctk.set_appearance_mode("dark")
-    ctk.set_default_color_theme("green")
-
-    app = ctk.CTk()
-    app.title("Sign Language Translator Pro")
-    app.attributes("-fullscreen", True)
-    app.resizable(False, False)
-
-    start_camera = {"value": False}
-
-    frame = ctk.CTkFrame(app, corner_radius=28)
-    frame.pack(expand=True, fill="both", padx=28, pady=28)
-
-    title = ctk.CTkLabel(
-        frame,
-        text="SIGN TRANSLATOR",
-        font=("Arial Rounded MT Bold", 34)
-    )
-    title.pack(pady=(42, 8))
-
-    subtitle = ctk.CTkLabel(
-        frame,
-        text="Real-time sign language recognition",
-        font=("Arial", 16)
-    )
-    subtitle.pack(pady=(0, 28))
-
-    def launch():
-        """
-        Closes the start screen and allows the camera translator to start
-        :return:
-        None
-        """
-        start_camera["value"] = True
-        app.destroy()
-
-    # 🔥 NICE BUTTON (your original style)
-    start_btn = ctk.CTkButton(
-        frame,
-        text="Start Camera",
-        font=("Arial Rounded MT Bold", 18),
-        height=52,
-        width=240,
-        corner_radius=18,
-        command=launch
-    )
-    start_btn.pack(pady=8)
-
-    # 🔥 SECOND BUTTON (styled)
-    quit_btn = ctk.CTkButton(
-        frame,
-        text="Close",
-        font=("Arial", 15),
-        height=42,
-        width=180,
-        corner_radius=16,
-        fg_color="#3A1E1E",
-        hover_color="#612828",
-        command=app.destroy
-    )
-    quit_btn.pack(pady=(14, 0))
-
-    app.mainloop()
-
-    return start_camera["value"]
 
 # =========================
 # MAIN LOOP
@@ -353,5 +276,5 @@ def run_translator():
     pygame.quit()
 
 
-if start_screen():
+if __name__ == "__main__":
     run_translator()

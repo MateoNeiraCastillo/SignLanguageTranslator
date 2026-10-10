@@ -11,7 +11,6 @@ Real-time sign language alphabet translator using a webcam. It detects the hand 
 - Letters are confirmed only after the prediction stays stable for 0.5 s, to filter out noise
 - Removing your hand from the frame for 0.5 s inserts a space and ends the word
 - Each finished word is spoken out loud (text-to-speech with `edge-tts`), in a separate thread so the camera never freezes
-- Start screen built with `customtkinter`
 
 ## How it works
 
@@ -61,7 +60,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Click **Start Camera** and start signing.
+The camera window opens directly. Start signing.
 
 | Key | Action |
 |-----|--------|
@@ -99,4 +98,4 @@ This normalizes every sample, trains the Random Forest, prints the OOB accuracy 
 
 ## Tech stack
 
-Python · OpenCV · MediaPipe · scikit-learn · NumPy · edge-tts · pygame · customtkinter
+Python · OpenCV · MediaPipe · scikit-learn · NumPy · edge-tts · pygame
