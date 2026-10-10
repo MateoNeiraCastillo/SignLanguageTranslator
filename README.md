@@ -9,7 +9,7 @@ Real-time sign language alphabet translator using a webcam. It detects the hand 
 
 - Real-time recognition of the 26 letters of the <!-- TODO: ASL / LSEC / ... --> alphabet
 - Letters are confirmed only after the prediction stays stable for 0.5 s, to filter out noise
-- Removing your hand from the frame for 0.5 s inserts a space and ends the word
+- Removing your hand from the frame for 0.3 s inserts a space and ends the word
 - Each finished word is spoken out loud with offline text-to-speech, in a separate thread so the camera never freezes
 
 ## How it works
@@ -71,7 +71,7 @@ The camera window opens directly. Start signing.
 Tips:
 - Hold each letter steady for about half a second until it appears.
 - To finish a word, take your hand out of the frame. The word will be read out loud.
-- Everything runs offline. Text-to-speech uses the system voice: the built-in `say` command on macOS and `pyttsx3` on Windows and Linux (on Linux you may need `sudo apt install espeak`).
+- Everything runs offline. Text-to-speech uses the system voice: a persistent `NSSpeechSynthesizer` on macOS (via `pyobjc`, so each word plays almost instantly) and `pyttsx3` on Windows and Linux (on Linux you may need `sudo apt install espeak`).
 - On macOS, allow camera access for your terminal or IDE the first time.
 
 ## Retraining the model

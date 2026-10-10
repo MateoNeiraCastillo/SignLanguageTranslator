@@ -19,6 +19,8 @@ audio_lock = threading.Lock()  # prevents overlapping audio playback
 last_spoken_word = ""
 last_audio_time = 0
 audio_cooldown = 0.1  # avoids speaking too frequently
+SPEECH_RATE = 210  # words per minute for the macOS voice (default is ~175)
+mac_synth = None  # macOS speech synthesizer, created once in the audio thread
 
 
 def audio_worker():
@@ -28,7 +30,26 @@ def audio_worker():
     :return:
     None
     """
-    global last_audio_time
+    global last_audio_time, mac_synth
+
+    # macOS: create the speech synthesizer ONCE and keep it loaded in memory, so each word
+    # starts almost instantly (calling the "say" command spawns a new process and takes ~2 s every time)
+    if sys.platform == "darwin":
+        try:
+            from AppKit import NSSpeechSynthesizer
+            mac_synth = NSSpeechSynthesizer.alloc().initWithVoice_(None)  # system default voice
+            mac_synth.setRate_(SPEECH_RATE)
+
+            # warm-up: the first word takes ~1.5 s because the speech engine initializes,
+            # so we speak a silent word at startup to absorb that delay
+            mac_synth.setVolume_(0.0)
+            mac_synth.startSpeakingString_("ready")
+            while mac_synth.isSpeaking():
+                time.sleep(0.02)
+            mac_synth.setVolume_(1.0)
+        except ImportError:
+            print("pyobjc not installed, falling back to the slower 'say' command")
+            mac_synth = None
 
     while True:
         text = speech_queue.get()  # waits until something is added to the queue
@@ -57,8 +78,12 @@ def speak_offline(text):
     None
     """
     with audio_lock:  # ensures only one audio plays at a time
-        if sys.platform == "darwin":
-            subprocess.run(["say", text], check=False)
+        if sys.platform == "darwin" and mac_synth is not None:
+            mac_synth.startSpeakingString_(text)
+            while mac_synth.isSpeaking():  # wait until the word finishes
+                time.sleep(0.02)
+        elif sys.platform == "darwin":
+            subprocess.run(["say", "-r", str(SPEECH_RATE), text], check=False)
         else:
             import pyttsx3
             engine = pyttsx3.init()
@@ -138,7 +163,7 @@ prediction_start_time = 0
 text_output = ""
 
 letter_confirmation_time = 0.5  # time needed to accept a letter
-no_hand_space_time = 0.5  # time without hand to insert space
+no_hand_space_time = 0.3  # time without hand to insert space (lower = faster audio, but too low may split words)
 
 letter_cooldown = False
 letter_cooldown_time = 0.8
