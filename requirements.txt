@@ -3,5 +3,6 @@ mediapipe==0.10.9
 numpy
 scikit-learn
 joblib
+matplotlib
 pyobjc-framework-Cocoa; sys_platform == "darwin"
 pyttsx3; sys_platform != "darwin"
