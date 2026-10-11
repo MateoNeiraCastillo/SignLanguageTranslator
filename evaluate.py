@@ -19,7 +19,7 @@ DATASET_DIR = "dataset_landmarks"
 RESULTS_DIR = "results"
 
 N_FOLDS = 5  # number of folds for cross-validation
-GAP = 10  # samples removed from training on each side of a test block (purging)
+GAP = 20 # samples removed from training on each side of a test block (purging)
 N_ESTIMATORS = 500  # same as training.py, so we evaluate the same kind of model
 SEED = 42  # fixed seed so results are reproducible
 LAGS = [1, 2, 5, 10, 20, 50, 100]  # distances (in samples) used in the redundancy analysis
