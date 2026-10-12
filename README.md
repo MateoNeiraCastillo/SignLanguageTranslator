@@ -15,13 +15,28 @@ Real-time sign language alphabet translator using a webcam. It detects the hand 
 ## How it works
 
 ```
-Webcam frame → MediaPipe Hands (21 landmarks × x,y,z) → normalization → Random Forest → letter
+Webcam frame → MediaPipe Hands (21 landmarks × x,y,z) → normalization + geometric features → Random Forest → letter
 ```
 
-1. **Landmark extraction**: MediaPipe detects 21 hand landmarks, each with (x, y, z) coordinates, giving 63 features.
+1. **Landmark extraction**: MediaPipe detects 21 hand landmarks, each with (x, y, z) coordinates, giving 63 values.
 2. **Normalization**: coordinates are moved so the wrist is the origin, then scaled by the largest absolute value. This makes the prediction independent of where the hand is in the frame and how far it is from the camera.
-3. **Classification**: a Random Forest with 500 trees predicts the letter.
-4. **Text logic**: stable predictions become letters, hand absence becomes spaces, and finished words are sent to the speech queue.
+3. **Geometric features**: 28 extra features describe how the fingers relate to each other, which raw coordinates only capture indirectly (see below). Together with the 63 normalized coordinates, each hand is described by 91 features.
+4. **Classification**: a Random Forest with 500 trees predicts the letter.
+5. **Text logic**: stable predictions become letters, hand absence becomes spaces, and finished words are sent to the speech queue.
+
+Feature extraction lives in a single module, `features.py`, shared by training, evaluation and the app. This guarantees that the model receives exactly the same features in real time as during training. The app also checks at startup that the saved model expects the number of features `features.py` produces.
+
+### Geometric features
+
+| Group | Count | What it captures |
+|---|---|---|
+| Distances between every pair of fingertips | 10 | Fingers together or apart (U vs V) |
+| Distances from the thumb tip to the base and middle joint of the index and middle fingers | 4 | Where the thumb is (T vs F) |
+| Bending angles, two per finger | 10 | Straight vs folded fingers |
+| Spread angles between neighbouring fingers | 3 | How open the hand is (U vs V) |
+| Index–middle crossing value | 1 | Crossed fingers (R) |
+
+All distances are divided by the hand size (wrist to the base of the middle finger), so they do not depend on how big the hand is. The crossing value uses the hand's own axis, so it works for both hands.
 
 ## Results
 
@@ -44,43 +59,53 @@ To fix it, `evaluate.py` uses **blocked 5-fold cross-validation with purging**:
 - Each letter's samples are kept in recording order and cut into 5 contiguous blocks. In each fold, one block per letter is the test set.
 - The 20 samples on each side of the test block are removed from training (purging), so no training sample is a direct neighbour of a test sample. The gap of 20 was chosen from the lag analysis above (ratio ≈ 0.93).
 
-| Evaluation | Accuracy | Macro F1 |
-|---|---|---|
-| Out-of-bag (Random Forest) | 99.2% | — |
-| Random 5-fold CV (leaky) | 99.0% ± 0.2 | 0.990 ± 0.002 |
-| **Blocked 5-fold CV + purging (gap = 20)** | **94.4% ± 1.9** | **0.943 ± 0.019** |
+| Evaluation | Features | Accuracy | Macro F1 |
+|---|---|---|---|
+| Out-of-bag (Random Forest) | 63 | 99.2% | — |
+| Random 5-fold CV (leaky) | 63 | 99.0% ± 0.2 | 0.990 ± 0.002 |
+| Blocked 5-fold CV + purging | 63 | 94.4% ± 1.9 | 0.943 ± 0.019 |
+| **Blocked 5-fold CV + purging** | **91 (+ geometric)** | **96.4% ± 1.6** | **0.964 ± 0.016** |
 
-The result is stable with respect to the gap size (95.0% with gap = 10, 94.4% with gap = 20).
+The leakage-free result is stable with respect to the gap size (95.0% with gap = 10, 94.4% with gap = 20, baseline features).
+
+Both blocked experiments use exactly the same folds, so the comparison is paired: only the features change. The geometric features improve accuracy in **all 5 folds** (+1.6 to +2.6 points), which makes the improvement unlikely to be noise.
 
 **This is still a signer-dependent, same-session estimate**: the same person, lighting and camera appear in training and test. It is an upper bound on how the model would perform with new users.
 
 ### Error analysis
 
-22 of the 26 letters reach an F1 above 0.95. The errors are concentrated in two groups:
+With the baseline features, 22 of the 26 letters already reached an F1 above 0.95, and the errors were concentrated in two groups. The geometric features were designed for these groups:
 
-| Group | F1 | Most frequent confusions (blocked CV) |
-|---|---|---|
-| U / V / R | U 0.73 · V 0.69 · R 0.92 | V→U 80, U→V 77, R→V 14, V→R 13, R→U 12 |
-| T / F | T 0.77 · F 0.77 | T→F 85, F→T 57 |
+| Letter | F1 (63 features) | F1 (91 features) | Change |
+|---|---|---|---|
+| T | 0.769 | 0.889 | +0.121 |
+| F | 0.770 | 0.888 | +0.118 |
+| U | 0.727 | 0.796 | +0.069 |
+| V | 0.694 | 0.753 | +0.059 |
+| R | 0.915 | 0.955 | +0.040 |
 
-U, V and R differ mostly in the relative position of the index and middle fingers, a small difference that is hard to pick up from raw coordinates alone.
+No other letter gets meaningfully worse (largest drop: H, −0.005).
 
-![Confusion matrix](results/confusion_matrix_blocked.png)
+- **T ↔ F** errors are halved (142 → 70): the thumb-position features work.
+- **U ↔ V** errors only drop by 17% (157 → 131) and remain the main weakness.
 
-The full per-letter report is in [`results/classification_report_blocked.txt`](results/classification_report_blocked.txt).
+![Confusion matrix with geometric features](results/confusion_matrix_blocked_features.png)
+
+Full per-letter reports: [baseline](results/classification_report_blocked.txt) · [geometric features](results/classification_report_blocked_features.txt). Baseline confusion matrix: [`results/confusion_matrix_blocked.png`](results/confusion_matrix_blocked.png).
 
 ## Project structure
 
 ```
 ├── main.py               # The translator app (camera, prediction, text and audio)
+├── features.py           # Shared feature extraction: normalization + geometric features
 ├── training.py           # Trains the final Random Forest on the full dataset
-├── evaluate.py           # Leakage-free evaluation: blocked CV, per-letter metrics, confusion matrix
+├── evaluate.py           # Leakage-free evaluation: blocked CV, feature comparison, per-letter metrics
 ├── inspect_dataset.py    # Checks the dataset structure and how redundant consecutive samples are
 ├── coordinates.py        # Debug tool: shows the hand landmarks and their coordinates live
 ├── model/
-│   └── modelo_senas.pkl  # Trained model
+│   └── modelo_senas.pkl  # Trained model (91 features)
 ├── dataset_landmarks/    # Dataset: one folder per letter with one .npy file per frame
-├── results/              # Evaluation outputs (confusion matrix, per-letter report)
+├── results/              # Evaluation outputs (confusion matrices, per-letter reports)
 └── requirements.txt
 ```
 
@@ -122,13 +147,13 @@ Tips:
 
 The dataset is included in `dataset_landmarks/`.
 
-To evaluate the model without leakage (takes a few minutes, it trains 10 forests):
+To evaluate the model without leakage (takes a few minutes, it trains 15 forests):
 
 ```bash
 python evaluate.py
 ```
 
-This prints the lag analysis, compares random and blocked cross-validation, and saves the per-letter report and the confusion matrix to `results/`.
+This prints the lag analysis, compares random and blocked cross-validation, compares the baseline and geometric features on the same folds, and saves the per-letter reports and confusion matrices to `results/`.
 
 To train the final model used by the app:
 
@@ -136,18 +161,19 @@ To train the final model used by the app:
 python training.py
 ```
 
-This trains the Random Forest on the full dataset and saves it to `model/modelo_senas.pkl`. The out-of-bag accuracy it prints is optimistic because of the leakage explained above; use `evaluate.py` for the real estimate.
+This trains the Random Forest on the full dataset with the 91 features and saves it to `model/modelo_senas.pkl`. The out-of-bag accuracy it prints is optimistic because of the leakage explained above; use `evaluate.py` for the real estimate.
 
 ## Limitations
 
 - Only static letters: signs with movement (such as J and Z) are learned as a single hand pose. Their high scores reflect that pose, not the real movement.
 - One hand at a time.
-- The dataset was recorded by one person in one setting, so the 94.4% does not measure performance on other people, lighting or camera angles.
+- The dataset was recorded by one person in one setting, so the 96.4% does not measure performance on other people, lighting or camera angles.
+- U and V are still the most confused letters.
 
 ## Roadmap
 
 - [x] Leakage-free evaluation: blocked cross-validation with purging, per-letter metrics and confusion matrix
-- [ ] Features that capture finger relationships (fingertip distances, angles) to separate U/V/R and T/F
+- [x] Geometric features (fingertip distances, angles, finger crossing): 94.4% → 96.4%, T/F errors halved
 - [ ] Recording script with signer and session metadata
 - [ ] Multi-signer dataset and signer-independent evaluation (leave-one-signer-out)
 - [ ] Temporal modeling (sequence models such as GRU/LSTM) to recognize signs with movement and full words

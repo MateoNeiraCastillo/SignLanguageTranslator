@@ -8,6 +8,8 @@ import subprocess
 import threading
 import queue
 
+from features import extract_features
+
 
 # =========================
 # AUDIO
@@ -115,28 +117,16 @@ audio_thread.start()
 # MODEL
 # =========================
 
-def normalize(sample):
-    """
-    Transform the array into a 21:3 matrix and normalize it using the wrist as the origin. This is with the objective
-    of maintaining consistency in the data while training the model and to avoid that the position of the hand
-    affects the prediction
-    :param
-    sample: np.ndarray
-    Array of size 63 with the (x,y,z) coordinates of the 21 mediapipe landmarks in the hand
-    :return:
-    np.ndarray
-    Array of size 63 with the normalized coordinates of the 21 mediapipe landmarks in the hand
-    """
-    pts = sample.reshape(21, 3)
-    pts = pts - pts[0]
-
-    max_val = np.max(np.abs(pts))
-    if max_val != 0:
-        pts = pts / max_val
-
-    return pts.flatten()
-
 model = joblib.load("model/modelo_senas.pkl")  # trained classifier
+
+# Safety check: the model must have been trained with the same features that extract_features produces.
+# If the model is older (63 features), it would receive data it was not trained on and fail or predict garbage
+EXPECTED_FEATURES = len(extract_features(np.zeros(63)))
+if model.n_features_in_ != EXPECTED_FEATURES:
+    sys.exit(
+        f"The model expects {model.n_features_in_} features but features.py produces {EXPECTED_FEATURES}. "
+        f"Retrain it with: python training.py"
+    )
 
 
 # =========================
@@ -182,8 +172,8 @@ WINDOW_NAME = "Sign Translator"
 def run_translator():
     """
     Runs the main loop of the application. It captures frames from the camera, detects hand landmarks using mediapipe,
-    normalizes them and predicts the corresponding sign using the trained model. It also manages the logic for
-    confirming letters, adding spaces and triggering audio output
+    extracts the features (normalized coordinates + geometric features) and predicts the corresponding sign using the
+    trained model. It also manages the logic for confirming letters, adding spaces and triggering audio output
     :return:
     None
     """
@@ -216,13 +206,14 @@ def run_translator():
 
                 mp_draw.draw_landmarks(frame, hand, mp_hands.HAND_CONNECTIONS)
 
-                # flatten 21 landmarks → 63 features
+                # flatten 21 landmarks → 63 raw values
                 pts = []
                 for lm in hand.landmark:
                     pts.extend([lm.x, lm.y, lm.z])
 
-                # reshape to (1,63) because model expects batch input
-                features = normalize(np.array(pts)).reshape(1, -1)
+                # same feature extraction as in training (shared function in features.py),
+                # reshaped to (1, n_features) because the model expects batch input
+                features = extract_features(np.array(pts)).reshape(1, -1)
                 pred = model.predict(features)[0]
 
                 # CONFIRMATION LOGIC:

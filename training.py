@@ -3,35 +3,17 @@ import os
 from sklearn.ensemble import RandomForestClassifier
 import joblib
 
-def normalize(sample):
-    """
-    Transform the array into a 21:3 matrix and normalize it using the wrist as the origin. This is with the objective
-    of maintaining consistency in the data while training the model and to avoid that the position of the hand
-    affects the prediction
-    :param
-    sample: np.ndarray
-    Array of size 63 with the (x,y,z) coordinates of the 21 mediapipe landmarks in the hand
-    :return:
-    np.ndarray
-    Array of size 63 with the normalized coordinates of the 21 mediapipe landmarks in the hand
-    """
-    pts = sample.reshape(21, 3)
-    pts = pts - pts[0]
-
-    max_val = np.max(np.abs(pts))
-    if max_val != 0:
-        pts = pts / max_val
-
-    return pts.flatten()
+from features import extract_features
 
 DATASET_DIR = "dataset_landmarks"
+MODEL_PATH = "model/modelo_senas.pkl"
 
-X = [] #Normalized coordinates of each sample in the training set
+X = [] #Feature vector of each sample in the training set (normalized coordinates + geometric features)
 y = [] #Letter correspond to each sample in X
 
-#Iterates in the training set, normalize each sample using the function from
-#the utils model and append it to X and Y (Normalized Coordinates, Letter) to
-#later train the model
+#Iterates in the training set, extracts the features of each sample using the shared function from
+#features.py and append it to X and Y (Features, Letter) to later train the model. Using the same
+#function as main.py guarantees that the model receives the same features in training and in real time
 for label in os.listdir(DATASET_DIR):
     class_dir = os.path.join(DATASET_DIR, label)
 
@@ -48,7 +30,7 @@ for label in os.listdir(DATASET_DIR):
                 data = [data]
 
             for sample in data:
-                X.append(normalize(sample))
+                X.append(extract_features(sample))
                 y.append(label)
 
 X = np.array(X)
@@ -56,14 +38,16 @@ y = np.array(y)
 
 print("Data uploaded", X.shape)
 
-#Random Forest with 500 estimators
-model = RandomForestClassifier(n_estimators=500 , oob_score = True)
+#Random Forest with 500 estimators, trained on the FULL dataset. The real performance of this
+#configuration is measured with evaluate.py; here we use all the data to get the best final model
+model = RandomForestClassifier(n_estimators=500, oob_score=True, n_jobs=-1, random_state=42)
 model.fit(X, y)
 
-print("OOB accuracy = ", model.oob_score_)
+#The OOB accuracy is optimistic: consecutive frames are near-duplicates, so it leaks (see evaluate.py)
+print("OOB accuracy (optimistic, see evaluate.py) = ", model.oob_score_)
 
 #Saved the model
 os.makedirs("model", exist_ok=True)
-joblib.dump(model, "model/modelo_senas.pkl")
+joblib.dump(model, MODEL_PATH)
 
-print("Model Saved")
+print("Model Saved:", MODEL_PATH, "| features per sample:", model.n_features_in_)

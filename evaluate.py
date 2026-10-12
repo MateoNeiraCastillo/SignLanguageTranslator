@@ -15,36 +15,16 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import StratifiedKFold
 
+from features import extract_features, normalize
+
 DATASET_DIR = "dataset_landmarks"
 RESULTS_DIR = "results"
 
 N_FOLDS = 5  # number of folds for cross-validation
-GAP = 20 # samples removed from training on each side of a test block (purging)
+GAP = 20  # samples removed from training on each side of a test block (purging)
 N_ESTIMATORS = 500  # same as training.py, so we evaluate the same kind of model
 SEED = 42  # fixed seed so results are reproducible
 LAGS = [1, 2, 5, 10, 20, 50, 100]  # distances (in samples) used in the redundancy analysis
-
-
-def normalize(sample):
-    """
-    Transform the array into a 21:3 matrix and normalize it using the wrist as the origin. This is with the objective
-    of maintaining consistency in the data while training the model and to avoid that the position of the hand
-    affects the prediction
-    :param
-    sample: np.ndarray
-    Array of size 63 with the (x,y,z) coordinates of the 21 mediapipe landmarks in the hand
-    :return:
-    np.ndarray
-    Array of size 63 with the normalized coordinates of the 21 mediapipe landmarks in the hand
-    """
-    pts = sample.reshape(21, 3)
-    pts = pts - pts[0]
-
-    max_val = np.max(np.abs(pts))
-    if max_val != 0:
-        pts = pts / max_val
-
-    return pts.flatten()
 
 
 def natural_key(name):
@@ -63,11 +43,12 @@ def natural_key(name):
 
 def load_dataset():
     """
-    Loads every sample of the dataset, normalizes it and keeps track of its position inside its letter. The position
-    is the recording order, which is what we use to build time-based (blocked) splits
+    Loads every raw sample of the dataset and keeps track of its position inside its letter. The position is the
+    recording order, which is what we use to build time-based (blocked) splits. Samples are returned raw so that
+    different feature extractors can be compared on exactly the same data
     :return:
     tuple(np.ndarray, np.ndarray, np.ndarray)
-    X with the normalized samples, y with the letters and positions with the recording order inside each letter
+    X with the raw samples, y with the letters and positions with the recording order inside each letter
     """
     X, y, positions = [], [], []
 
@@ -85,7 +66,7 @@ def load_dataset():
                 data = data.reshape(1, -1)
 
             for sample in data:
-                X.append(normalize(sample))
+                X.append(sample)
                 y.append(label)
                 positions.append(position)
                 position += 1
@@ -189,19 +170,19 @@ def evaluate(X, y, folds, name):
     collects the out-of-fold predictions, so every sample is predicted exactly once by a model that did not see it
     :param
     X: np.ndarray
-    Normalized samples
+    Feature matrix
     y: np.ndarray
     Letter of each sample
     folds: list
     List of (train_indices, test_indices) tuples
     name: str
-    Name of the split strategy, used in the printed report
+    Name of the experiment, used in the printed report
     :return:
     dict
-    Mean and standard deviation of accuracy and macro F1, plus all true labels and predictions
+    Per-fold accuracies, mean and standard deviation of accuracy and macro F1, plus all true labels and predictions
     """
     print("=" * 70)
-    print(f"{name.upper()} SPLIT ({N_FOLDS} folds)")
+    print(f"{name.upper()} ({N_FOLDS} folds, {X.shape[1]} features)")
     print("=" * 70)
 
     accs, f1s = [], []
@@ -227,13 +208,14 @@ def evaluate(X, y, folds, name):
     print()
 
     return {
+        "accs": np.array(accs),
         "acc_mean": np.mean(accs), "acc_std": np.std(accs),
         "f1_mean": np.mean(f1s), "f1_std": np.std(f1s),
         "y_true": np.array(y_true_all), "y_pred": np.array(y_pred_all),
     }
 
 
-def save_confusion_matrix(y_true, y_pred, labels, path):
+def save_confusion_matrix(y_true, y_pred, labels, path, title):
     """
     Plots the confusion matrix (rows = real letter, columns = predicted letter) and saves it as an image
     :param
@@ -245,6 +227,8 @@ def save_confusion_matrix(y_true, y_pred, labels, path):
     Ordered list of letters used for rows and columns
     path: str
     Where to save the image
+    title: str
+    Title of the plot
     :return:
     np.ndarray
     The confusion matrix as a 26x26 array of counts
@@ -257,7 +241,7 @@ def save_confusion_matrix(y_true, y_pred, labels, path):
     )
     for text in ax.texts:
         text.set_fontsize(7)
-    ax.set_title("Confusion matrix (blocked split, out-of-fold predictions)")
+    ax.set_title(title)
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -292,44 +276,108 @@ def print_top_confusions(cm, labels, top=10):
     print()
 
 
-def main():
+def save_results(result, labels, suffix, title):
     """
-    Runs the full evaluation: loads the data, analyses redundancy between neighbouring samples, compares a random
-    split with a blocked split, and saves the per-letter report and the confusion matrix of the blocked split
+    Saves the per-letter report and the confusion matrix of one experiment to the results folder and prints the
+    most frequent confusions
+    :param
+    result: dict
+    Output of evaluate()
+    labels: list
+    Ordered list of letters
+    suffix: str
+    Text added to the file names to tell experiments apart ("" for the baseline)
+    title: str
+    Title of the confusion matrix plot
     :return:
     None
     """
-    X, y, positions = load_dataset()
+    report = classification_report(result["y_true"], result["y_pred"], labels=labels, digits=3)
+    report_path = os.path.join(RESULTS_DIR, f"classification_report_blocked{suffix}.txt")
+    with open(report_path, "w") as f:
+        f.write(report)
+
+    cm_path = os.path.join(RESULTS_DIR, f"confusion_matrix_blocked{suffix}.png")
+    cm = save_confusion_matrix(result["y_true"], result["y_pred"], labels, cm_path, title)
+
+    print(f"[{title}]")
+    print_top_confusions(cm, labels)
+    print(f"Saved: {cm_path}")
+    print(f"Saved: {report_path}\n")
+
+
+def compare_per_letter(baseline, improved, labels):
+    """
+    Prints the F1 of every letter with the baseline features and with the geometric features, and the difference.
+    This shows whether the new features fix the letters they were designed for (U/V/R, T/F) without hurting others
+    :param
+    baseline: dict
+    Output of evaluate() with the baseline features
+    improved: dict
+    Output of evaluate() with the geometric features
+    labels: list
+    Ordered list of letters
+    :return:
+    None
+    """
+    f1_base = f1_score(baseline["y_true"], baseline["y_pred"], labels=labels, average=None)
+    f1_new = f1_score(improved["y_true"], improved["y_pred"], labels=labels, average=None)
+
+    print("=" * 70)
+    print("PER-LETTER F1 (blocked split): baseline vs geometric features")
+    print("=" * 70)
+    print(f"{'Letter':<8}{'Baseline':>10}{'Geometric':>11}{'Change':>9}")
+    for letter, a, b in zip(labels, f1_base, f1_new):
+        mark = "  <-- " if abs(b - a) >= 0.03 else ""
+        print(f"{letter:<8}{a:>10.3f}{b:>11.3f}{b - a:>+9.3f}{mark}")
+    print()
+
+
+def main():
+    """
+    Runs the full evaluation: loads the data, analyses redundancy between neighbouring samples, compares a random
+    split with a blocked split, and compares the baseline features with the geometric features using exactly the same
+    blocked folds. Saves the per-letter reports and confusion matrices of both blocked experiments
+    :return:
+    None
+    """
+    X_raw, y, positions = load_dataset()
     labels = sorted(np.unique(y))
-    print(f"Data loaded: X = {X.shape}, {len(labels)} letters\n")
 
-    lag_analysis(X, y)
+    X_base = np.array([normalize(sample) for sample in X_raw])
+    X_geo = np.array([extract_features(sample) for sample in X_raw])
+    print(f"Data loaded: {len(y)} samples, {len(labels)} letters")
+    print(f"Baseline features: {X_base.shape[1]}   Geometric features: {X_geo.shape[1]}\n")
 
-    random_result = evaluate(X, y, random_folds(y), "random")
-    blocked_result = evaluate(X, y, blocked_folds(y, positions), "blocked")
+    lag_analysis(X_base, y)
+
+    # The same folds are used for both feature sets, so the comparison is paired: only the features change
+    folds_random = random_folds(y)
+    folds_blocked = blocked_folds(y, positions)
+
+    random_base = evaluate(X_base, y, folds_random, "random split - baseline")
+    blocked_base = evaluate(X_base, y, folds_blocked, "blocked split - baseline")
+    blocked_geo = evaluate(X_geo, y, folds_blocked, "blocked split - geometric features")
 
     print("=" * 70)
     print("COMPARISON")
     print("=" * 70)
-    print(f"{'Split':<10}{'Accuracy':>20}{'Macro F1':>20}")
-    for name, r in [("random", random_result), ("blocked", blocked_result)]:
-        print(f"{name:<10}{r['acc_mean']:>12.3f} ± {r['acc_std']:.3f}{r['f1_mean']:>12.3f} ± {r['f1_std']:.3f}")
-    print()
+    print(f"{'Experiment':<32}{'Accuracy':>18}{'Macro F1':>18}")
+    for name, r in [("random - baseline", random_base),
+                    ("blocked - baseline", blocked_base),
+                    ("blocked - geometric", blocked_geo)]:
+        print(f"{name:<32}{r['acc_mean']:>10.3f} ± {r['acc_std']:.3f}{r['f1_mean']:>10.3f} ± {r['f1_std']:.3f}")
+
+    diffs = blocked_geo["accs"] - blocked_base["accs"]
+    print("\nAccuracy change per fold (geometric - baseline): "
+          + "  ".join(f"{d:+.3f}" for d in diffs))
+    print(f"Folds improved: {np.sum(diffs > 0)} / {N_FOLDS}\n")
+
+    compare_per_letter(blocked_base, blocked_geo, labels)
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
-
-    report = classification_report(blocked_result["y_true"], blocked_result["y_pred"], labels=labels, digits=3)
-    print("Per-letter report (blocked split):")
-    print(report)
-    with open(os.path.join(RESULTS_DIR, "classification_report_blocked.txt"), "w") as f:
-        f.write(report)
-
-    cm_path = os.path.join(RESULTS_DIR, "confusion_matrix_blocked.png")
-    cm = save_confusion_matrix(blocked_result["y_true"], blocked_result["y_pred"], labels, cm_path)
-    print_top_confusions(cm, labels)
-
-    print(f"Saved: {cm_path}")
-    print(f"Saved: {os.path.join(RESULTS_DIR, 'classification_report_blocked.txt')}")
+    save_results(blocked_base, labels, "", "Confusion matrix - baseline (blocked split)")
+    save_results(blocked_geo, labels, "_features", "Confusion matrix - geometric features (blocked split)")
 
 
 if __name__ == "__main__":
