@@ -1,5 +1,6 @@
 import argparse
 import os
+import random
 import re
 import string
 import time
@@ -24,7 +25,7 @@ def parse_args():
     editing the code (e.g. python record_dataset.py --signer s02 --session 1)
     :return:
     argparse.Namespace
-    Object with the attributes signer, session, letters, takes and frames
+    Object with the attributes signer, session, letters, takes, frames and shuffle
     """
     parser = argparse.ArgumentParser(description="Record hand landmark takes for the sign language dataset")
     parser.add_argument("--signer", required=True,
@@ -37,6 +38,8 @@ def parse_args():
                         help="Takes to record per letter in this run (default: 5)")
     parser.add_argument("--frames", type=int, default=30,
                         help="Frames with a detected hand saved per take (default: 30, about 1 second)")
+    parser.add_argument("--shuffle", action=argparse.BooleanOptionalAction, default=True,
+                        help="Record the letters in random order (default). Use --no-shuffle for A-Z order")
     return parser.parse_args()
 
 
@@ -172,7 +175,9 @@ def record_take(cap, hands, n_frames, header):
 def main():
     """
     Runs the recorder. For each letter it records the requested number of takes, saving each one as a separate
-    .npy file of shape (frames, 63) with the RAW landmarks. The file name stores the metadata:
+    .npy file of shape (frames, 63) with the RAW landmarks. By default the letters are recorded in random order:
+    with a fixed A-Z order, the last letters would always be recorded when the person is most tired, and the model
+    could learn that "tired hand" means "Z" (a confounder). The file name stores the metadata:
     dataset_v2/<signer>/<letter>/<signer>_ses<session>_<letter>_t<take>_<hand>.npy
     Keys: SPACE = record a take, D = delete the last take of this letter, N = next letter, Q = quit
     :return:
@@ -180,6 +185,9 @@ def main():
     """
     args = parse_args()
     letters = [c for c in args.letters.upper() if c in string.ascii_uppercase]
+    if args.shuffle:
+        random.shuffle(letters)
+    print("Recording order:", " ".join(letters))
 
     hands = mp_hands.Hands(
         static_image_mode=False,
@@ -197,7 +205,7 @@ def main():
     message = ""
     quit_all = False
 
-    for letter in letters:
+    for letter_number, letter in enumerate(letters, start=1):
         if quit_all:
             break
 
@@ -215,7 +223,8 @@ def main():
             n_saved = len(existing_takes(letter_dir, prefix))
             header = [
                 f"Signer {args.signer} | session {args.session}",
-                f"Letter {letter} | take {done + 1}/{args.takes} | already saved: {n_saved}",
+                f"Letter {letter} ({letter_number}/{len(letters)}) | take {done + 1}/{args.takes} | "
+                f"already saved: {n_saved}",
             ]
             lines = header + ["SPACE record | D delete last | N next letter | Q quit"]
             if message:
