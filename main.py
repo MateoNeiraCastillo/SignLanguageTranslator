@@ -6,7 +6,7 @@ import time
 import sys
 import subprocess
 import threading
-import queu
+import queue
 
 from features import extract_features
 
