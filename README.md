@@ -1,13 +1,15 @@
 # Sign Language Translator
 
-Real-time sign language alphabet translator using a webcam. It detects the hand with **MediaPipe**, classifies the sign with a **Random Forest**, builds words letter by letter, and reads each finished word out loud.
+Real-time fingerspelling translator for **Spanish Sign Language (LSE, *Lengua de Signos Española*)** using a webcam. It detects the hand with **MediaPipe**, classifies the sign with a **Random Forest**, builds words letter by letter, and reads each finished word out loud.
+
+Most sign language recognition projects and public datasets focus on American Sign Language (ASL). LSE has far fewer digital resources, and its manual alphabet differs from ASL in several letters (for example, M and N are signed with the fingers pointing down instead of as a closed fist).
 
 <!-- TODO: add a GIF or screenshot of the app running -->
 <!-- ![demo](demo.gif) -->
 
 ## Features
 
-- Real-time recognition of the 26 letters of the <!-- TODO: ASL / LSEC / ... --> alphabet
+- Real-time recognition of 26 letters (A–Z) of the LSE manual alphabet
 - Letters are confirmed only after the prediction stays stable for 0.5 s, to filter out noise
 - Removing your hand from the frame for 0.3 s inserts a space and ends the word
 - Each finished word is spoken out loud with offline text-to-speech, in a separate thread so the camera never freezes
@@ -70,7 +72,7 @@ The leakage-free result is stable with respect to the gap size (95.0% with gap =
 
 Both blocked experiments use exactly the same folds, so the comparison is paired: only the features change. The geometric features improve accuracy in **all 5 folds** (+1.6 to +2.6 points), which makes the improvement unlikely to be noise.
 
-**This is still a signer-dependent, same-session estimate**: the same person, lighting and camera appear in training and test. It is an upper bound on how the model would perform with new users.
+**This is a signer-dependent, same-session estimate**: the same person, lighting and camera appear in training and test. It measures how well the model recognizes new recordings of the signer it was trained on, not how it performs with other people. Evaluating on new signers would require recording additional people, which is out of the scope of this project.
 
 ### Error analysis
 
@@ -89,6 +91,8 @@ No other letter gets meaningfully worse (largest drop: H, −0.005).
 - **T ↔ F** errors are halved (142 → 70): the thumb-position features work.
 - **U ↔ V** errors only drop by 17% (157 → 131) and remain the main weakness.
 
+Plotting the most typical recorded pose of each letter explains the remaining errors. In this dataset, U and V were recorded with almost the same finger separation, and S, T and F share a very similar handshape. When two letters look almost the same in the data, better features cannot fully separate them: the next fix is to re-record those letters with clearer differences.
+
 ![Confusion matrix with geometric features](results/confusion_matrix_blocked_features.png)
 
 Full per-letter reports: [baseline](results/classification_report_blocked.txt) · [geometric features](results/classification_report_blocked_features.txt). Baseline confusion matrix: [`results/confusion_matrix_blocked.png`](results/confusion_matrix_blocked.png).
@@ -101,6 +105,8 @@ Full per-letter reports: [baseline](results/classification_report_blocked.txt) �
 ├── training.py           # Trains the final Random Forest on the full dataset
 ├── evaluate.py           # Leakage-free evaluation: blocked CV, feature comparison, per-letter metrics
 ├── inspect_dataset.py    # Checks the dataset structure and how redundant consecutive samples are
+├── record_dataset.py     # Records new takes (30 frames each) with session metadata, in shuffled letter order
+├── check_recordings.py   # Quality check of recorded takes: missing letters, broken files, suspicious takes
 ├── coordinates.py        # Debug tool: shows the hand landmarks and their coordinates live
 ├── model/
 │   └── modelo_senas.pkl  # Trained model (91 features)
@@ -165,18 +171,19 @@ This trains the Random Forest on the full dataset with the 91 features and saves
 
 ## Limitations
 
-- Only static letters: signs with movement (such as J and Z) are learned as a single hand pose. Their high scores reflect that pose, not the real movement.
-- One hand at a time.
-- The dataset was recorded by one person in one setting, so the 96.4% does not measure performance on other people, lighting or camera angles.
-- U and V are still the most confused letters.
+- **Single signer.** The dataset was recorded by one person in one setting, so the 96.4% does not measure performance on other people, lighting or camera angles. Accuracy with new users is expected to be lower.
+- **Static letters only.** Signs with movement (such as J and Z) are learned as a single hand pose. Their high scores reflect that pose, not the real movement.
+- **Partial alphabet.** Only A–Z are covered; letters of the LSE alphabet such as Ñ are not included.
+- **One hand at a time.**
+- **U/V and S/T/F** are still the most confused letters (see the error analysis).
 
 ## Roadmap
 
 - [x] Leakage-free evaluation: blocked cross-validation with purging, per-letter metrics and confusion matrix
 - [x] Geometric features (fingertip distances, angles, finger crossing): 94.4% → 96.4%, T/F errors halved
-- [ ] Recording script with signer and session metadata
-- [ ] Multi-signer dataset and signer-independent evaluation (leave-one-signer-out)
-- [ ] Temporal modeling (sequence models such as GRU/LSTM) to recognize signs with movement and full words
+- [x] Recording script with session metadata and quality checker
+- [ ] Re-record U, V, S, T and F with clearer differences between them
+- [ ] Temporal modeling (sequence models such as GRU/LSTM) to recognize letters with movement (J, Z, Ñ)
 - [ ] Web deployment so it can be tried without installing anything
 
 ## Tech stack
