@@ -3,3 +3,11 @@
 __pycache__/
 *.zip
 .DS_Store
+.pytest_cache/
+
+# The dataset is committed as one zip (unzip it to get dataset_landmarks/),
+# and the model is built locally with training.py
+!dataset_landmarks.zip
+dataset_landmarks/
+dataset_v2/
+model/*.pkl

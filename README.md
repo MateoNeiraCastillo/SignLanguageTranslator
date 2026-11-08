@@ -1,11 +1,10 @@
 # Sign Language Translator
 
+[![tests](https://github.com/MateoNeiraCastillo/SignLanguageTranslator/actions/workflows/tests.yml/badge.svg)](https://github.com/MateoNeiraCastillo/SignLanguageTranslator/actions/workflows/tests.yml)
+
 Real-time fingerspelling translator for **Spanish Sign Language (LSE, *Lengua de Signos Española*)** using a webcam. It detects the hand with **MediaPipe**, classifies the sign with a **Random Forest**, builds words letter by letter, and reads each finished word out loud.
 
 Most sign language recognition projects and public datasets focus on American Sign Language (ASL). LSE has far fewer digital resources, and its manual alphabet differs from ASL in several letters (for example, M and N are signed with the fingers pointing down instead of as a closed fist).
-
-<!-- TODO: add a GIF or screenshot of the app running -->
-<!-- ![demo](demo.gif) -->
 
 ## Features
 
@@ -108,9 +107,9 @@ Full per-letter reports: [baseline](results/classification_report_blocked.txt) �
 ├── record_dataset.py     # Records new takes (30 frames each) with session metadata, in shuffled letter order
 ├── check_recordings.py   # Quality check of recorded takes: missing letters, broken files, suspicious takes
 ├── coordinates.py        # Debug tool: shows the hand landmarks and their coordinates live
-├── model/
-│   └── modelo_senas.pkl  # Trained model (91 features)
-├── dataset_landmarks/    # Dataset: one folder per letter with one .npy file per frame
+├── tests/                # Unit tests for features.py (run with pytest)
+├── dataset_landmarks.zip # Dataset: unzips to one folder per letter with one .npy file per frame
+├── model/                # Created by training.py (the trained model is not committed)
 ├── results/              # Evaluation outputs (confusion matrices, per-letter reports)
 └── requirements.txt
 ```
@@ -127,7 +126,12 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 
 pip install -r requirements.txt
+
+unzip dataset_landmarks.zip      # the dataset (4 MB): 8,060 samples
+python training.py               # trains the model (about a minute)
 ```
+
+The trained model is not stored in the repository: it is 48 MB and fully reproducible from the dataset, so `training.py` builds it locally.
 
 ## Usage
 
@@ -151,7 +155,7 @@ Tips:
 
 ## Evaluating and retraining
 
-The dataset is included in `dataset_landmarks/`.
+The dataset is included as `dataset_landmarks.zip` (unzip it once, see Installation).
 
 To evaluate the model without leakage (takes a few minutes, it trains 15 forests):
 

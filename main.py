@@ -3,6 +3,7 @@ import mediapipe as mp
 import joblib
 import numpy as np
 import time
+import os
 import sys
 import subprocess
 import threading
@@ -117,7 +118,10 @@ audio_thread.start()
 # MODEL
 # =========================
 
-model = joblib.load("model/modelo_senas.pkl")  # trained classifier
+MODEL_PATH = "model/modelo_senas.pkl"
+if not os.path.exists(MODEL_PATH):
+    sys.exit(f"Model not found at {MODEL_PATH}. Train it first (about a minute): python training.py")
+model = joblib.load(MODEL_PATH)  # trained classifier
 
 # Safety check: the model must have been trained with the same features that extract_features produces.
 # If the model is older (63 features), it would receive data it was not trained on and fail or predict garbage

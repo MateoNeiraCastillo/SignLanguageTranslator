@@ -8,6 +8,9 @@ from features import extract_features
 DATASET_DIR = "dataset_landmarks"
 MODEL_PATH = "model/modelo_senas.pkl"
 
+if not os.path.isdir(DATASET_DIR):
+    raise SystemExit(f"Dataset not found at {DATASET_DIR}/. Unzip it first: unzip dataset_landmarks.zip")
+
 X = [] #Feature vector of each sample in the training set (normalized coordinates + geometric features)
 y = [] #Letter correspond to each sample in X
 
