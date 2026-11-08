@@ -6,6 +6,10 @@ Real-time fingerspelling translator for **Spanish Sign Language (LSE, *Lengua de
 
 Most sign language recognition projects and public datasets focus on American Sign Language (ASL). LSE has far fewer digital resources, and its manual alphabet differs from ASL in several letters (for example, M and N are signed with the fingers pointing down instead of as a closed fist).
 
+<p align="center">
+  <img src="docs/demo.webp" alt="Spelling H-E-L-L-O in LSE: each letter appears once the hand holds it steady, and the word is read out loud" width="560">
+</p>
+
 ## Features
 
 - Real-time recognition of 26 letters (A–Z) of the LSE manual alphabet
